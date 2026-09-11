@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
     from lerobot.policies.pretrained import PreTrainedPolicy
 
     from physicalai.gyms import Gym
@@ -217,14 +218,16 @@ def _action_chunk_size(config: object) -> int:
     Returns:
         Number of action steps produced by the policy.
     """
-    for attr in ("n_action_steps", "chunk_size"):
+    # ACT/VLA chunk prediction returns chunk_size even when its action queue
+    # executes fewer steps. Diffusion instead exposes only n_action_steps.
+    for attr in ("chunk_size", "n_action_steps"):
         value = getattr(config, attr, None)
         if value is not None:
             return int(value)
     return 1
 
 
-class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
+class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):  # noqa: PLR0904
     """Dynamic Lightning wrapper around any registered LeRobot policy.
 
     Dispatches to the LeRobot policy identified by ``policy_name`` and
@@ -1032,8 +1035,8 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     def predict_action_chunk(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Predict full action chunk using the wrapped LeRobot policy.
 
-        Returns the complete action chunk predicted by the model without
-        queue management. Use this when you need all predicted future actions.
+        Diffusion retains single observations in its history. Explicit batched
+        temporal windows are evaluated independently of that online history.
 
         Args:
             batch: Input batch of observations.
@@ -1044,8 +1047,25 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         """
         batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
         batch_dict = self._preprocessor(batch_dict)
-        actions = self.lerobot_policy.predict_action_chunk(batch_dict)
+        if self.policy_name == "diffusion":
+            from physicalai.policies.lerobot.diffusion_history import predict_chunk  # noqa: PLC0415
+
+            actions = predict_chunk(cast("DiffusionPolicy", self.lerobot_policy), batch_dict)
+        else:
+            actions = self.lerobot_policy.predict_action_chunk(batch_dict)
         return self._postprocessor(actions)
+
+    def observe(self, batch: Observation | dict[str, torch.Tensor]) -> None:
+        """Retain an observation while Runtime serves a buffered action.
+
+        Args:
+            batch: Current observation, without an action or temporal window.
+        """
+        if self.policy_name == "diffusion":
+            from physicalai.policies.lerobot.diffusion_history import observe  # noqa: PLC0415
+
+            batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+            observe(cast("DiffusionPolicy", self.lerobot_policy), self._preprocessor(batch_dict))
 
     def select_action(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Select single action using LeRobot's internal action queue.
@@ -1090,7 +1110,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     @property
     def inputs_schema(self) -> list[InferenceFeature] | None:
         """Describe the policy's expected Runtime inputs for export metadata."""
-        if self._config is None:
+        if self._config is None or self._config.input_features is None:
             return None
 
         schema: list[InferenceFeature] = []
@@ -1126,7 +1146,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     @property
     def outputs_schema(self) -> list[InferenceFeature] | None:
         """Describe the policy's action chunk output for export metadata."""
-        if self._config is None:
+        if self._config is None or self._config.output_features is None:
             return None
 
         for feature in self._config.output_features.values():
