@@ -172,20 +172,38 @@ class TorchAdapter(RuntimeAdapter):
 
         try:
             # Build Observation from numpy dict and convert to torch tensors on device
-            observation = Observation.from_dict(inputs).to_torch(self.device)
-            extra_inputs = self._extra_inputs(inputs)
-            if extra_inputs:
-                observation.extra = {
-                    **(observation.extra or {}),
-                    **extra_inputs,
-                }
-
+            observation = self._observation(inputs)
             torch_outputs = self._policy(observation)
             return self._convert_outputs_to_numpy(torch_outputs)
 
         except Exception as e:
             msg = f"Inference failed: {e}"
             raise RuntimeError(msg) from e
+
+    def observe(self, inputs: dict[str, Any]) -> None:
+        """Update policy history without predicting another action chunk.
+
+        Args:
+            inputs: Preprocessed Runtime observation payload.
+        """
+        observer = getattr(self._policy, "observe", None)
+        if callable(observer):
+            observer(self._observation(inputs))
+
+    def reset(self) -> None:
+        """Clear the loaded policy's observation and action queues."""
+        if self._policy is not None:
+            self._policy.reset()
+
+    def _observation(self, inputs: dict[str, Any]) -> Observation:
+        """Convert standard and policy-specific Runtime inputs.
+
+        Returns:
+            Observation containing tensors on the adapter's device.
+        """
+        observation = Observation.from_dict(inputs).to_torch(self.device)
+        observation.extra = {**(observation.extra or {}), **self._extra_inputs(inputs)}
+        return observation
 
     def _extra_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Return inputs that do not map to first-class ``Observation`` fields."""
