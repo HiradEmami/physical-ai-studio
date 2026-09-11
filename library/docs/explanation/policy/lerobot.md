@@ -220,6 +220,27 @@ Native physicalai policies (`physicalai.policies.act` etc.) keep their
 explicit signatures because physicalai owns those contracts. The
 config-first design described here applies only to LeRobot wrappers.
 
+## Diffusion Torch inference
+
+Diffusion Torch exports return an action chunk with shape
+`(n_action_steps, action_dim)` through Runtime `InferenceModel`. Input feature
+shapes in the manifest describe one observation. Images are float tensors in
+`[0, 1]`, in channel-first order; saved policy processors apply the training
+normalization and action denormalization.
+
+The wrapper retains the most recent `n_obs_steps` observations and repeats the
+first observation to initialize history. Pass each new environment observation
+to `select_action`, including steps that consume a previously predicted action.
+Call `reset()` at the start of each episode. Stateful Runtime inference requires
+the adapter `observe(inputs)` and `reset()` lifecycle hooks: Runtime must forward
+buffered-step observations and episode resets to the adapter.
+
+For direct chunk prediction, a batched explicit temporal window is also
+supported: state has shape `(batch, n_obs_steps, state_dim)` and image features
+have shape `(batch, n_obs_steps, channels, height, width)`. These windows are
+evaluated independently and do not replace the online history. Ordinary
+single-observation inference is verified for unbatched inputs and batch size one.
+
 ## Implementation Details
 
 ### Why This Works
