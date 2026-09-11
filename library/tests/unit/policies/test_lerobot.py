@@ -253,7 +253,11 @@ class TestLeRobotPolicyMethods:
         batch = {"observation.state": torch.zeros(1, 2)}
 
         policy.train()
-        chunk = policy.predict_action_chunk(batch)
+        with patch(
+            "physicalai.policies.lerobot.diffusion_history.predict_chunk",
+            side_effect=lambda native, inputs: native.predict_action_chunk(inputs),
+        ):
+            chunk = policy.predict_action_chunk(batch)
         action = policy.select_action(batch)
         policy.reset()
 
@@ -454,6 +458,7 @@ class TestNamedLeRobotPolicy:
 
         with pytest.raises(ValueError, match="refusing to override"):
             wrapper_cls(policy_name=wrong_name)
+
 
 class TestLeRobotPolicyCheckpoint:
     """Tests for checkpoint save and load functionality."""
