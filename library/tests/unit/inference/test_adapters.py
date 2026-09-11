@@ -265,7 +265,7 @@ class TestTorchAdapter:
             assert mock_load.call_args.kwargs["compile_model"] is True
 
     def test_lerobot_diffusion_torch_export_loads_with_inference_model(self, tmp_path: Path) -> None:
-        """Torch export for LeRobot diffusion loads through Runtime InferenceModel."""
+        """Test export plumbing with a fake; real-model coverage lives in integration."""
         pytest.importorskip("lerobot")
         from lerobot.configs.types import FeatureType, PolicyFeature  # noqa: PLC0415
         from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig  # noqa: PLC0415
@@ -312,9 +312,13 @@ class TestTorchAdapter:
         ):
             model = InferenceModel(tmp_path, backend="torch", device="cpu")
 
-        chunk = model.predict_action_chunk({
-            "observation.environment_state": np.zeros((1, 2), dtype=np.float32),
-        })
+        with patch(
+            "physicalai.policies.lerobot.diffusion_history.predict_chunk",
+            side_effect=lambda native, inputs: native.predict_action_chunk(inputs),
+        ):
+            chunk = model.predict_action_chunk({
+                "observation.environment_state": np.zeros((1, 2), dtype=np.float32),
+            })
 
         assert chunk.shape == (3, 2)
         np.testing.assert_allclose(chunk, expected_chunk.numpy()[0])
