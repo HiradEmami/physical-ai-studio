@@ -1,0 +1,44 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+# Bounded public-data optimization check, not a trained deployment policy.
+seed: 404
+loss_window: 25
+model:
+  n_obs_steps: 2
+  horizon: 8
+  n_action_steps: 3
+  down_dims: [32, 64]
+  n_groups: 8
+  diffusion_step_embed_dim: 32
+  num_inference_steps: 2
+  pretrained_backbone_weights: null
+  crop_shape: [84, 84]
+  spatial_softmax_num_keypoints: 4
+  optimizer_lr: 0.0003
+  scheduler_warmup_steps: 10
+  device: cpu
+data:
+  repo_id: lerobot/pusht
+  revision: 7628202a2180972f291ba1bc6723834921e72c19
+  episodes: [0, 1, 2, 3]
+  train_batch_size: 4
+  val_batch_size: 4
+  val_split: 0.25
+  val_split_seed: 404
+  num_workers: 0
+  video_backend: pyav
+  data_format: physicalai
+  delta_timestamps:
+    observation.state: [-0.1, 0.0]
+    observation.image: [-0.1, 0.0]
+    action: [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+trainer:
+  accelerator: cpu
+  devices: 1
+  precision: 32-true
+  max_steps: 200
+  limit_val_batches: 4
+  log_every_n_steps: 1
+  enable_progress_bar: false
+  enable_model_summary: false
+  gradient_clip_val: 10.0
