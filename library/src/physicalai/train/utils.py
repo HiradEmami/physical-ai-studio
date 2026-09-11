@@ -33,6 +33,10 @@ def _get_delta_indices(model: Any, attr_name: str) -> list[int] | None:  # noqa:
     # Try config attribute (LeRobot policies)
     if hasattr(model, "config"):
         config = model.config
+        # LeRobot declares the training horizon separately from the number of
+        # actions executed per chunk (notably diffusion's shifted horizon).
+        if hasattr(config, attr_name):
+            return getattr(config, attr_name)
         # Convert observation_delta_indices -> n_obs_steps
         # action_delta_indices -> n_action_steps, etc.
         if attr_name == "observation_delta_indices" and hasattr(config, "n_obs_steps"):
@@ -43,9 +47,6 @@ def _get_delta_indices(model: Any, attr_name: str) -> list[int] | None:  # noqa:
         if attr_name == "action_delta_indices" and hasattr(config, "n_action_steps"):
             n_steps = config.n_action_steps
             return list(range(n_steps)) if n_steps > 0 else None
-        # Try direct config attribute
-        if hasattr(config, attr_name):
-            return getattr(config, attr_name)
 
     return None
 
